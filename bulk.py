@@ -30,7 +30,7 @@ THREADS = 2
 TIMEOUT_S = 5
 # typically we gzip bulks
 ENABLE_GZIP = True
-# target bitrate to ES cluster (throttle to size ingest rate to cluster size)
+# target bitrate to ES cluster in megabits/second (throttle to size ingest rate to cluster size)
 TARGET_MBPS = 5
 # report status every 1 s
 REPORT_S = 1
@@ -66,10 +66,6 @@ def make_log_record():
     # the name of the service emitting the log
     record['service.name'] = random.choice(services)
 
-    ## ---- optional environmental fields
-    record['service.version'] = random.choice(versions)
-    record['service.environment'] = random.choice(environments)
-
     ## ---- ideally present if message represents exception/errors:
     if record['log.level'] == 'WARN' or record['log.level'] == 'ERROR' or record['log.level'] == 'FATAL':
         record['error.type'] = random.choice(error_types)
@@ -78,6 +74,8 @@ def make_log_record():
             record['error.stack_trace'] = 'Exception in thread "main" java.lang.NullPointerException\n\tat org.example.App.methodName(App.java:42)'
 
     # ---- optional context
+    record['service.version'] = random.choice(versions)
+    record['service.environment'] = random.choice(environments)
     record['log.origin.file.name'] = random.choice(filenames)
     record['log.origin.file.line'] = random.randrange(0, 1000)
     record['log.origin.function'] = random.choice(functions)
@@ -180,7 +178,7 @@ def logs_loop(target_bitrate):
                 failed_inserts += len(records)
                 break
 
-        # throttle upload to target bitrate
+        # throttle overall upload to target bitrate
         duration_in_sec = time.time() - start
         bitrate = (bytes_over_channel * 8) / duration_in_sec
         if bitrate > target_bitrate:
@@ -197,5 +195,6 @@ if __name__ == "__main__":
     # start N upload threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         for i in range(THREADS):
+            # divide overall target bitrate amongst threads
             executor.submit(logs_loop, TARGET_BITRATE/THREADS)
         executor.shutdown()
