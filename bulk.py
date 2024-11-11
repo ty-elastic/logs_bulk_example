@@ -148,14 +148,13 @@ def logs_loop(target_bitrate):
                             raise Exception("max retries exceeded")
                         logger.warning(f'429... attemping retry {i}')
                         retried_inserts += len(records)
+                        # backoff before retry
                         time.sleep(backoff_s)
                         backoff_s = backoff_s * 2
                         continue
                     # non-429 error, don't retry
                     else:
-                        logger.error(f'error inserting records: {resp.status_code}')
-                        failed_inserts += len(records)
-                        break
+                        raise Exception(resp.status_code)
                 # something inserted
                 else:
                     resp_json = resp.json()
