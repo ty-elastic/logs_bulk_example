@@ -20,7 +20,7 @@ logger.addHandler(stdout_handler)
 # not required, but helpful to distinguish your custom schema from ECS or OTel semantics
 CUSTOM_FIELDS_NAMESPACE = "com.example"
 # in ES, you can segregate services into namespaces
-DEFAULT_NAMESPACE = 'default'
+DATASTREAM_NAMESPACE = 'default'
 
 # the number of records to batch at a time
 BATCH_SIZE = 2000
@@ -122,7 +122,7 @@ def logs_loop(target_bitrate):
         batch = []
         # format per ES _bulk API
         for record in records:
-            batch.append({ "create" : { "_index" : make_index_name(record['service.name'], DEFAULT_NAMESPACE) } })
+            batch.append({ "create" : { "_index" : make_index_name(record['service.name'], DATASTREAM_NAMESPACE) } })
             batch.append(record)
         # ndjson body needs to end with a newline
         payload = ndjson.dumps(batch) + "\r\n"

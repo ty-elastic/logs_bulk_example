@@ -19,6 +19,11 @@ TIMEOUT_S = 5
 # number of records per paged search request
 RECORDS_PER_SEARCH = 5000
 
+# NAMESPACE
+DATASTREAM_NAMESPACE = 'default'
+# logs pattern
+LOGS_DATASTREAM_PATTERN = f'logs-*-{DATASTREAM_NAMESPACE}'
+
 # see https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
 # note this is a python generator function; it returns an iterable result (per page)
 def search(*, service_name=None, timestamp_min=None, timestamp_max=None, log_level=None, message=None):
@@ -66,7 +71,7 @@ def search(*, service_name=None, timestamp_min=None, timestamp_max=None, log_lev
         while True:
             body_json = json.dumps(body)
             logger.info(f'querying: {body_json}')
-            resp = requests.post(f"{elasticsearch_url}/logs-*/_search",
+            resp = requests.post(f"{elasticsearch_url}/{LOGS_DATASTREAM_PATTERN}/_search",
                                                 data=body_json,
                                                 timeout=TIMEOUT_S,
                                                 headers=headers)
