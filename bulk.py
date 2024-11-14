@@ -138,7 +138,7 @@ def logs_loop(target_bitrate):
                 # try bulk insert
                 resp = requests.post(f"{elasticsearch_url}/_bulk",
                                         data=payload, timeout=TIMEOUT_S,
-                                        headers=headers)
+                                        headers=headers, verify=False)
                 # nothing inserted
                 if resp.status_code != 200:
                     # if 429 (ES busy), retry w/ backoff

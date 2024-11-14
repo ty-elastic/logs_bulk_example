@@ -74,7 +74,7 @@ def search(*, service_name=None, timestamp_min=None, timestamp_max=None, log_lev
             resp = requests.post(f"{elasticsearch_url}/{LOGS_DATASTREAM_PATTERN}/_search",
                                                 data=body_json,
                                                 timeout=TIMEOUT_S,
-                                                headers=headers)
+                                                headers=headers, verify=False)
             resp_json = resp.json()
             if 'hits' in resp_json:
                 records = []
