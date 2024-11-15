@@ -201,7 +201,7 @@ def logs_loop(target_bitrate, ndjson_file):
                                     successful_inserts += 1
                                 # this record was not
                                 else:
-                                    logger.error(f'failed to insert doc: {item['create']['status']}: {item['create']['error']['type']} / {item['create']['error']['reason']}')
+                                    logger.error(f"failed to insert doc: {item['create']['status']}: {item['create']['error']['type']} / {item['create']['error']['reason']}")
                                     failed_inserts += 1
                         # no errors
                         else:
