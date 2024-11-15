@@ -10,6 +10,7 @@ import sys
 import logging
 import concurrent.futures
 import urllib3
+import argparse
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # configure logging
@@ -45,8 +46,6 @@ TARGET_BITRATE = TARGET_MBPS * 1024 * 1024
 
 USE_SERVICE_NAME_FOR_INDEX = True
 
-READ_FROM_NDJSON = 'data/eb-sql-log_11-11-2024_19-30-52_0x0.1799273348.921058.ndjson'
-
 # some sample data
 services = ['frontend', 'processor']
 messages = ['SyntaxError: invalid syntax', 'IndentationError: unexpected indent', "TypeError: 'list' object cannot be interpreted as an integer"]
@@ -58,6 +57,11 @@ threads = ['main', 'background']
 environments = ['test', 'prod']
 error_types = ['java.lang.NullPointerException']
 error_messages = ['The argument cannot be null']
+
+parser = argparse.ArgumentParser(
+                    prog='bulk',
+                    description='bulk ingest docs into ES')
+parser.add_argument('-f', '--file')
 
 # see https://www.elastic.co/guide/en/ecs-logging/overview/current/intro.html
 def make_log_record():
@@ -122,7 +126,7 @@ def reaer_sim(count):
             records.append(log_record)
         yield records
 
-def logs_loop(target_bitrate):
+def logs_loop(target_bitrate, ndjson_file):
     try:
         logger.info('starting thread')
 
@@ -140,8 +144,8 @@ def logs_loop(target_bitrate):
         retried_inserts = 0
 
         records_reader = None
-        if READ_FROM_NDJSON is not None:
-            records_reader = reader_ndjson(READ_FROM_NDJSON, BATCH_SIZE)
+        if ndjson_file is not None:
+            records_reader = reader_ndjson(ndjson_file, BATCH_SIZE)
         else:
             records_reader = reaer_sim(BATCH_SIZE)
 
@@ -225,9 +229,12 @@ def logs_loop(target_bitrate):
         logger.error(f'error inserting records: {inst}')
 
 if __name__ == "__main__":
+    args = parser.parse_args()
+    #print(args.file)
+
     # start N upload threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         for i in range(THREADS):
             # divide overall target bitrate amongst threads
-            executor.submit(logs_loop, TARGET_BITRATE/THREADS)
+            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file)
         executor.shutdown()
