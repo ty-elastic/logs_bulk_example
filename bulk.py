@@ -101,15 +101,18 @@ def make_index_name(service, namespace):
 # this simulates pulling a bunch of log records from some external queue
 
 def reader_ndjson(file, count):
-    batch = []
-    with open(file) as f:
-        for line in f:
-            record = json.loads(line)
-            record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
-            batch.append(record)
-            if len(batch) == count:
+    while True:
+        with open(file) as f:
+            batch = []
+            for line in f:
+                record = json.loads(line)
+                record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
+                batch.append(record)
+                if len(batch) == count:
+                    yield batch
+                    batch = []
+            if len(batch) > 0:
                 yield batch
-                batch = []
 
 def reaer_sim(count):
     while True:
