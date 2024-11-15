@@ -131,7 +131,7 @@ def logs_loop(target_bitrate, ndjson_file):
         logger.info('starting thread')
 
         elasticsearch_url = os.environ['ELASTICSEARCH_URL']
-        headers = {'Authorization': f'ApiKey {os.environ['ELASTICSEARCH_APIKEY']}', 'kbn-xsrf': 'reporting', 'Content-Type': 'application/x-ndjson'}
+        headers = {'Authorization': f"ApiKey {os.environ['ELASTICSEARCH_APIKEY']}", 'kbn-xsrf': 'reporting', 'Content-Type': 'application/x-ndjson'}
         if ENABLE_GZIP:
             headers['Content-Encoding'] = 'gzip'
 
