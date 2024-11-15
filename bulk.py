@@ -1,6 +1,7 @@
 import requests
 import random
 import ndjson
+import json
 from datetime import datetime, timezone
 import os
 import time
@@ -8,6 +9,8 @@ import gzip
 import sys
 import logging
 import concurrent.futures
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # configure logging
 logger = logging.getLogger(__name__)
@@ -39,6 +42,10 @@ RETRIES = 3
 RETRY_BACKOFF_S = 10 / 1000
 
 TARGET_BITRATE = TARGET_MBPS * 1024 * 1024
+
+USE_SERVICE_NAME_FOR_INDEX = True
+
+READ_FROM_NDJSON = 'data/eb-sql-log_11-11-2024_19-30-52_0x0.1799273348.921058.ndjson'
 
 # some sample data
 services = ['frontend', 'processor']
@@ -92,103 +99,127 @@ def make_index_name(service, namespace):
     return f"logs-{service}-{namespace}"
 
 # this simulates pulling a bunch of log records from some external queue
-def pull_from_queue(count):
-    records = []
-    for i in range(count):
-        log_record = make_log_record()
-        records.append(log_record)
-    return records
+
+def reader_ndjson(file, count):
+    batch = []
+    with open(file) as f:
+        for line in f:
+            record = json.loads(line)
+            record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
+            batch.append(record)
+            if len(batch) == count:
+                yield batch
+                batch = []
+
+def reaer_sim(count):
+    while True:
+        records = []
+        for i in range(count):
+            log_record = make_log_record()
+            records.append(log_record)
+        yield records
 
 def logs_loop(target_bitrate):
-    logger.info('starting thread')
+    try:
+        logger.info('starting thread')
 
-    elasticsearch_url = os.environ['ELASTICSEARCH_URL']
-    headers = {'Authorization': f'ApiKey {os.environ['ELASTICSEARCH_APIKEY']}', 'kbn-xsrf': 'reporting', 'Content-Type': 'application/x-ndjson'}
-    if ENABLE_GZIP:
-        headers['Content-Encoding'] = 'gzip'
-
-    start = time.time()
-    bytes_over_channel = 0
-    last_report = time.time()
-
-    successful_inserts = 0
-    failed_inserts = 0
-    retried_inserts = 0
-
-    # see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
-    while True:
-        # pull records from queue
-        records = pull_from_queue(BATCH_SIZE)
-        batch = []
-        # format per ES _bulk API
-        for record in records:
-            batch.append({ "create" : { "_index" : make_index_name(record['service.name'], DATASTREAM_NAMESPACE) } })
-            batch.append(record)
-        # ndjson body needs to end with a newline
-        payload = ndjson.dumps(batch) + "\r\n"
-        # optionally gzip it (typical)
+        elasticsearch_url = os.environ['ELASTICSEARCH_URL']
+        headers = {'Authorization': f'ApiKey {os.environ['ELASTICSEARCH_APIKEY']}', 'kbn-xsrf': 'reporting', 'Content-Type': 'application/x-ndjson'}
         if ENABLE_GZIP:
-            payload = gzip.compress(payload.encode('utf-8'))
+            headers['Content-Encoding'] = 'gzip'
 
-        # (only) for 429s (ES busy), we will retry...
-        backoff_s = RETRY_BACKOFF_S
-        for i in range(RETRIES+1):
-            try:
-                bytes_over_channel += len(payload)
-                # try bulk insert
-                resp = requests.post(f"{elasticsearch_url}/_bulk",
-                                        data=payload, timeout=TIMEOUT_S,
-                                        headers=headers, verify=False)
-                # nothing inserted
-                if resp.status_code != 200:
-                    # if 429 (ES busy), retry w/ backoff
-                    if resp.status_code == 429:
-                        # max retries exceed
-                        if i == (RETRIES):
-                            raise Exception("max retries exceeded")
-                        logger.warning(f'429... attemping retry {i}')
-                        retried_inserts += len(records)
-                        # backoff before retry
-                        time.sleep(backoff_s)
-                        backoff_s = backoff_s * 2
-                        continue
-                    # non-429 error, don't retry
+        start = time.time()
+        bytes_over_channel = 0
+        last_report = time.time()
+
+        successful_inserts = 0
+        failed_inserts = 0
+        retried_inserts = 0
+
+        records_reader = None
+        if READ_FROM_NDJSON is not None:
+            records_reader = reader_ndjson(READ_FROM_NDJSON, BATCH_SIZE)
+        else:
+            records_reader = reaer_sim(BATCH_SIZE)
+
+        # see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
+        for records in records_reader:
+            batch = []
+            # format per ES _bulk API
+            for record in records:
+                ds_name = 'services'
+                if USE_SERVICE_NAME_FOR_INDEX and 'service.name' in record:
+                    ds_name = record['service.name']
+                batch.append({ "create" : { "_index" : make_index_name(ds_name, DATASTREAM_NAMESPACE) } })
+                batch.append(record)
+            # ndjson body needs to end with a newline
+            payload = ndjson.dumps(batch) + "\r\n"
+            # optionally gzip it (typical)
+            if ENABLE_GZIP:
+                payload = gzip.compress(payload.encode('utf-8'))
+
+            # (only) for 429s (ES busy), we will retry...
+            backoff_s = RETRY_BACKOFF_S
+            for i in range(RETRIES+1):
+                try:
+                    bytes_over_channel += len(payload)
+                    # try bulk insert
+                    resp = requests.post(f"{elasticsearch_url}/_bulk",
+                                            data=payload, timeout=TIMEOUT_S,
+                                            headers=headers, verify=False)
+                    # nothing inserted
+                    if resp.status_code != 200:
+                        # if 429 (ES busy), retry w/ backoff
+                        if resp.status_code == 429:
+                            # max retries exceed
+                            if i == (RETRIES):
+                                raise Exception("max retries exceeded")
+                            logger.warning(f'429... attemping retry {i}')
+                            retried_inserts += len(records)
+                            # backoff before retry
+                            time.sleep(backoff_s)
+                            backoff_s = backoff_s * 2
+                            continue
+                        # non-429 error, don't retry
+                        else:
+                            raise Exception(resp.status_code)
+                    # something inserted
                     else:
-                        raise Exception(resp.status_code)
-                # something inserted
-                else:
-                    resp_json = resp.json()
-                    # some errors
-                    if resp_json['errors'] == True:
-                        for item in resp_json['items']:
-                            # this record was good
-                            if item['create']['status'] == 201:
-                                successful_inserts += 1
-                            # this record was not
-                            else:
-                                logger.error(f'failed to insert doc: {item['create']['status']}: {item['create']['error']['type']} / {item['create']['error']['reason']}')
-                                failed_inserts += 1
-                    # no errors
-                    else:
-                        successful_inserts += len(records)
+                        resp_json = resp.json()
+                        # some errors
+                        if resp_json['errors'] == True:
+                            for item in resp_json['items']:
+                                # this record was good
+                                if item['create']['status'] == 201:
+                                    successful_inserts += 1
+                                # this record was not
+                                else:
+                                    logger.error(f'failed to insert doc: {item['create']['status']}: {item['create']['error']['type']} / {item['create']['error']['reason']}')
+                                    failed_inserts += 1
+                        # no errors
+                        else:
+                            successful_inserts += len(records)
+                        break
+                except Exception as inst:
+                    logger.error(f'error inserting records: {inst}')
+                    failed_inserts += len(records)
                     break
-            except Exception as inst:
-                logger.error(f'error inserting records: {inst}')
-                failed_inserts += len(records)
-                break
 
-        # throttle overall upload to target bitrate
-        duration_in_sec = time.time() - start
-        bitrate = (bytes_over_channel * 8) / duration_in_sec
-        if bitrate > target_bitrate:
-            sleep = ((bytes_over_channel * 8) / target_bitrate) - duration_in_sec
-            if sleep > 0:
-                time.sleep(sleep)
+            # throttle overall upload to target bitrate
+            duration_in_sec = time.time() - start
+            bitrate = (bytes_over_channel * 8) / duration_in_sec
+            if bitrate > target_bitrate:
+                sleep = ((bytes_over_channel * 8) / target_bitrate) - duration_in_sec
+                if sleep > 0:
+                    time.sleep(sleep)
 
-        # report status
-        if time.time() - last_report > REPORT_S:
-            logger.info(f'bps={int(bitrate)}, successful_inserts={successful_inserts}, retries={retried_inserts}, failed_inserts={failed_inserts}')
-            last_report = time.time()
+            # report status
+            if time.time() - last_report > REPORT_S:
+                logger.info(f'bps={int(bitrate)}, successful_inserts={successful_inserts}, retries={retried_inserts}, failed_inserts={failed_inserts}')
+                last_report = time.time()
+        logger.info(f'bps={int(bitrate)}, successful_inserts={successful_inserts}, retries={retried_inserts}, failed_inserts={failed_inserts}')
+    except Exception as inst:
+        logger.error(f'error inserting records: {inst}')
 
 if __name__ == "__main__":
     # start N upload threads
