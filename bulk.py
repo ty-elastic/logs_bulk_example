@@ -44,7 +44,7 @@ RETRY_BACKOFF_S = 10 / 1000
 
 TARGET_BITRATE = TARGET_MBPS * 1024 * 1024
 
-USE_SERVICE_NAME_FOR_INDEX = True
+USE_SERVICE_NAME_FOR_INDEX = False
 
 # some sample data
 services = ['frontend', 'processor']
@@ -57,11 +57,6 @@ threads = ['main', 'background']
 environments = ['test', 'prod']
 error_types = ['java.lang.NullPointerException']
 error_messages = ['The argument cannot be null']
-
-parser = argparse.ArgumentParser(
-                    prog='bulk',
-                    description='bulk ingest docs into ES')
-parser.add_argument('-f', '--file')
 
 # see https://www.elastic.co/guide/en/ecs-logging/overview/current/intro.html
 def make_log_record():
@@ -126,7 +121,7 @@ def reaer_sim(count):
             records.append(log_record)
         yield records
 
-def logs_loop(target_bitrate, ndjson_file):
+def logs_loop(target_bitrate, ndjson_file, namespace):
     try:
         logger.info('starting thread')
 
@@ -157,7 +152,7 @@ def logs_loop(target_bitrate, ndjson_file):
                 ds_name = 'services'
                 if USE_SERVICE_NAME_FOR_INDEX and 'service.name' in record:
                     ds_name = record['service.name']
-                batch.append({ "create" : { "_index" : make_index_name(ds_name, DATASTREAM_NAMESPACE) } })
+                batch.append({ "create" : { "_index" : make_index_name(ds_name, namespace) } })
                 batch.append(record)
             # ndjson body needs to end with a newline
             payload = ndjson.dumps(batch) + "\r\n"
@@ -228,6 +223,12 @@ def logs_loop(target_bitrate, ndjson_file):
     except Exception as inst:
         logger.error(f'error inserting records: {inst}')
 
+parser = argparse.ArgumentParser(
+                    prog='bulk',
+                    description='bulk ingest docs into ES')
+parser.add_argument('-f', '--file')
+parser.add_argument('-n', '--namespace')
+
 if __name__ == "__main__":
     args = parser.parse_args()
     #print(args.file)
@@ -236,5 +237,5 @@ if __name__ == "__main__":
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         for i in range(THREADS):
             # divide overall target bitrate amongst threads
-            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file)
+            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.namespace)
         executor.shutdown()
