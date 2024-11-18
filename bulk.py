@@ -12,6 +12,8 @@ import concurrent.futures
 import urllib3
 import argparse
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from functools import lru_cache 
+import uuid
 
 # configure logging
 logger = logging.getLogger(__name__)
@@ -97,6 +99,11 @@ def make_index_name(service, namespace):
     # put each service into their own datastream/index
     return f"logs-{service}-{namespace}"
 
+# for a given source correlation_id, return a replacement (either new or cached)
+@lru_cache
+def regen_correlation_id(correlation_id):
+    return str(uuid.uuid4())
+
 # this simulates pulling a bunch of log records from some external queue
 
 def reader_ndjson(file, count):
@@ -106,6 +113,8 @@ def reader_ndjson(file, count):
             for line in f:
                 record = json.loads(line)
                 record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
+                if 'cal.correlation_id' in record:
+                    record['cal.correlation_id'] = regen_correlation_id(record['cal.correlation_id'])
                 batch.append(record)
                 if len(batch) == count:
                     yield batch
