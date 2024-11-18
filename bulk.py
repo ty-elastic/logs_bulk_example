@@ -130,7 +130,7 @@ def reaer_sim(count):
             records.append(log_record)
         yield records
 
-def logs_loop(target_bitrate, ndjson_file, namespace):
+def logs_loop(target_bitrate, ndjson_file, service, namespace):
     try:
         logger.info('starting thread')
 
@@ -158,9 +158,10 @@ def logs_loop(target_bitrate, ndjson_file, namespace):
             batch = []
             # format per ES _bulk API
             for record in records:
-                ds_name = 'services'
-                if USE_SERVICE_NAME_FOR_INDEX and 'service.name' in record:
+                if service is None and 'service.name' in record:
                     ds_name = record['service.name']
+                else:
+                    ds_name = service if
                 batch.append({ "create" : { "_index" : make_index_name(ds_name, namespace) } })
                 batch.append(record)
             # ndjson body needs to end with a newline
@@ -236,15 +237,16 @@ parser = argparse.ArgumentParser(
                     prog='bulk',
                     description='bulk ingest docs into ES')
 parser.add_argument('-f', '--file')
+parser.add_argument('-s', '--service')
 parser.add_argument('-n', '--namespace')
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    #print(args.file)
+
 
     # start N upload threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         for i in range(THREADS):
             # divide overall target bitrate amongst threads
-            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.namespace)
+            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.service, args.namespace)
         executor.shutdown()
