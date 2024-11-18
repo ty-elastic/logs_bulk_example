@@ -161,7 +161,7 @@ def logs_loop(target_bitrate, ndjson_file, service, namespace):
                 if service is None and 'service.name' in record:
                     ds_name = record['service.name']
                 else:
-                    ds_name = service if
+                    ds_name = service
                 batch.append({ "create" : { "_index" : make_index_name(ds_name, namespace) } })
                 batch.append(record)
             # ndjson body needs to end with a newline
