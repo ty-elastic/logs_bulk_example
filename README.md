@@ -26,7 +26,7 @@ This python script requires the following variables to be set:
 
 ## Bulk Insert Execution
 
-`python bulk.py`
+`python3 bulk.py -f data/cal.ndjson -s services -n cal -c com.paypal.cal.correlation_id`
 
 (this will create N threads and run forever)
 
