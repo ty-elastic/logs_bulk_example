@@ -37,7 +37,7 @@ TIMEOUT_S = 5
 # typically we gzip bulks
 ENABLE_GZIP = True
 # target bitrate to ES cluster in megabits/second (throttle to size ingest rate to cluster size)
-TARGET_MBPS = 5
+TARGET_MBPS = 1
 # report status every 1 s
 REPORT_S = 1
 # retry 429s 3 times, exponentially starting with 10ms
