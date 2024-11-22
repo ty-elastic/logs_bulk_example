@@ -109,14 +109,14 @@ def regen_correlation_id(correlation_id):
 
 # this simulates pulling a bunch of log records from some external queue
 
-def reader_ndjson(file, count, correlation_id_field):
+def reader_ndjson(file, count, correlation_id_field, loop):
     while True:
         with open(file) as f:
             batch = []
             for line in f:
                 record = json.loads(line)
                 record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
-                if correlation_id_field in record:
+                if correlation_id_field in record and loop:
                     record[correlation_id_field] = regen_correlation_id(record[correlation_id_field])
                 batch.append(record)
                 if len(batch) == count:
@@ -124,6 +124,8 @@ def reader_ndjson(file, count, correlation_id_field):
                     batch = []
             if len(batch) > 0:
                 yield batch
+        if loop is False:
+            break
 
 def reader_sim(count):
     while True:
@@ -133,7 +135,7 @@ def reader_sim(count):
             records.append(log_record)
         yield records
 
-def logs_loop(target_bitrate, ndjson_file, service, namespace, correlation_id_field):
+def logs_loop(target_bitrate, ndjson_file, service, namespace, correlation_id_field, loop):
     try:
         logger.info('starting thread')
 
@@ -152,7 +154,7 @@ def logs_loop(target_bitrate, ndjson_file, service, namespace, correlation_id_fi
 
         records_reader = None
         if ndjson_file is not None:
-            records_reader = reader_ndjson(ndjson_file, BATCH_SIZE, correlation_id_field)
+            records_reader = reader_ndjson(ndjson_file, BATCH_SIZE, correlation_id_field, loop)
         else:
             records_reader = reader_sim(BATCH_SIZE)
 
@@ -243,6 +245,7 @@ parser.add_argument('-f', '--file')
 parser.add_argument('-s', '--service')
 parser.add_argument('-n', '--namespace')
 parser.add_argument('-c', '--correlation_id_field')
+parser.add_argument('-l', '--loop', action='store_true')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -251,5 +254,5 @@ if __name__ == "__main__":
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         for i in range(THREADS):
             # divide overall target bitrate amongst threads
-            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.service, args.namespace, args.correlation_id_field)
+            executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.service, args.namespace, args.correlation_id_field, args.loop)
         executor.shutdown()
