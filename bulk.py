@@ -99,10 +99,13 @@ def make_index_name(service, namespace):
     # put each service into their own datastream/index
     return f"logs-{service}-{namespace}"
 
+def generate_random_hex(length):
+  return ''.join(random.choice('0123456789abcdef') for _ in range(length))
+
 # for a given source correlation_id, return a replacement (either new or cached)
 @lru_cache
 def regen_correlation_id(correlation_id):
-    return str(uuid.uuid4())
+    return generate_random_hex(13)
 
 # this simulates pulling a bunch of log records from some external queue
 
@@ -122,7 +125,7 @@ def reader_ndjson(file, count, correlation_id_field):
             if len(batch) > 0:
                 yield batch
 
-def reaer_sim(count):
+def reader_sim(count):
     while True:
         records = []
         for i in range(count):
@@ -151,7 +154,7 @@ def logs_loop(target_bitrate, ndjson_file, service, namespace, correlation_id_fi
         if ndjson_file is not None:
             records_reader = reader_ndjson(ndjson_file, BATCH_SIZE, correlation_id_field)
         else:
-            records_reader = reaer_sim(BATCH_SIZE)
+            records_reader = reader_sim(BATCH_SIZE)
 
         # see https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         for records in records_reader:
@@ -243,7 +246,6 @@ parser.add_argument('-c', '--correlation_id_field')
 
 if __name__ == "__main__":
     args = parser.parse_args()
-
 
     # start N upload threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
