@@ -253,6 +253,9 @@ if __name__ == "__main__":
 
     # start N upload threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
+        threads = THREADS
+        if args.loop is False:
+            threads = 1
         for i in range(THREADS):
             # divide overall target bitrate amongst threads
             executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.service, args.namespace, args.correlation_id_field, args.loop)
