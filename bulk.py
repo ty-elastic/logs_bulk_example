@@ -115,9 +115,10 @@ def reader_ndjson(file, count, correlation_id_field, loop):
             batch = []
             for line in f:
                 record = json.loads(line)
-                record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
-                if correlation_id_field in record and loop:
-                    record[correlation_id_field] = regen_correlation_id(record[correlation_id_field])
+                if loop:
+                    record['@timestamp'] = datetime.now(tz=timezone.utc).isoformat()
+                    if correlation_id_field in record:
+                        record[correlation_id_field] = regen_correlation_id(record[correlation_id_field])
                 batch.append(record)
                 if len(batch) == count:
                     yield batch
