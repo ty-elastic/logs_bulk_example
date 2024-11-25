@@ -256,6 +256,7 @@ if __name__ == "__main__":
         threads = THREADS
         if args.loop is False:
             threads = 1
+            args.correlation_id_field = None
         for i in range(threads):
             # divide overall target bitrate amongst threads
             executor.submit(logs_loop, TARGET_BITRATE/THREADS, args.file, args.service, args.namespace, args.correlation_id_field, args.loop)
